@@ -37,9 +37,8 @@ copilot = [
 # Voice: WAV playback for the system-TTS pipeline + push-to-talk speech-to-text.
 # numpy comes from `processing`.
 voice = [
-    "sounddevice>=0.4",  # WAV playback + input-device check (PortAudio)
-    "SpeechRecognition>=3.10",  # recognizer.listen() endpointing + free Google STT
-    "pyaudio>=0.2.11",  # microphone source for SpeechRecognition (Windows wheels exist)
+    "sounddevice>=0.4",  # WAV playback + mic capture (PortAudio)
+    "SpeechRecognition>=3.10",  # free Google STT endpoint (capture is ours, see app/stt)
 ]
 dev = [
     "pytest>=8.0",
