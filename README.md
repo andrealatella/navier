@@ -182,6 +182,50 @@ npm run build
   di sistema. Il pulsante di silenziamento nel banner degli allarmi zittisce la voce
   senza nascondere gli allarmi visivi.
 
+## Companion telefono (GPS)
+
+Il companion è una pagina che il telefono tiene aperta durante la caccia e che manda la
+posizione GPS alla mappa del laptop.
+
+Dalla cartella `frontend/` si avvia il server di sviluppo con `npm run dev`: resta in
+ascolto anche sulla rete locale, non solo su localhost.
+
+Serve poi l'indirizzo IP del laptop sulla rete locale. Da PowerShell:
+
+```
+(Get-NetIPConfiguration | Where-Object { $_.IPv4DefaultGateway }).IPv4Address.IPAddress
+```
+
+Risponde con un indirizzo solo, quello della scheda davvero collegata alla rete, e per
+questo è più comodo di `ipconfig`, che elenca anche le schede virtuali di VPN, macchine
+virtuali e WSL fra cui è facile sbagliare. L'indirizzo giusto comincia quasi sempre con
+`192.168.` oppure `10.`, e cambia quando ci si sposta su un'altra rete.
+
+Dal telefono, collegato alla stessa rete Wi-Fi, si apre:
+
+```
+http://<ip-del-laptop>:5173/companion
+```
+
+All'inizio il pulsante "Attiva GPS" è disattivato: i browser espongono la
+geolocalizzazione solo in contesto sicuro, e un indirizzo IP in HTTP non lo è. Su Chrome
+per Android si sistema una volta sola dichiarando quell'origine come sicura. Si apre
+
+```
+chrome://flags/#unsafely-treat-insecure-origin-as-secure
+```
+
+si incolla `http://<ip-del-laptop>:5173` nella casella, si porta il flag su *Enabled* e si
+riavvia Chrome. Poi si tocca "Attiva GPS" e si concede il permesso di posizione.
+
+Il pallino in alto diventa verde quando il collegamento è attivo e compare il contatore
+degli invii; la pagina tiene acceso lo schermo da sola e va lasciata aperta durante la
+caccia.
+
+Cambiando rete cambia l'IP del laptop, quindi va aggiornata la voce nel flag. In
+alternativa, chi preferisce non toccare i flag può servire il frontend in HTTPS: Vite lo
+fa da solo se trova `frontend/certs/cert.pem` e `key.pem`, generabili con mkcert.
+
 ## Endpoint principali
 
 - `GET /` : l'app (frontend compilato).
