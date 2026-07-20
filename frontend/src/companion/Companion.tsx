@@ -27,6 +27,7 @@ export function Companion() {
   const closedRef = useRef(false);
 
   const secure = window.isSecureContext;
+  const origin = window.location.origin;
 
   const connect = useCallback(() => {
     closedRef.current = false;
@@ -143,11 +144,22 @@ export function Companion() {
 
       {!secure && (
         <div className="rounded-lg border border-amber-500/40 bg-amber-950/40 p-4 text-sm leading-relaxed text-amber-100">
-          <p className="font-semibold">Serve una connessione sicura (HTTPS).</p>
+          <p className="font-semibold">Il browser blocca il GPS su questo indirizzo.</p>
           <p className="mt-1">
-            Il browser attiva il GPS solo in contesto sicuro. Apri questa pagina come{" "}
-            <code className="rounded bg-black/30 px-1">https://&lt;ip-laptop&gt;:5173/companion</code>{" "}
-            con il certificato mkcert (vedi il README).
+            La geolocalizzazione è esposta solo in contesto sicuro. Su Chrome per Android
+            si autorizza una volta sola: apri{" "}
+            <code className="rounded bg-black/30 px-1 break-all">
+              chrome://flags/#unsafely-treat-insecure-origin-as-secure
+            </code>
+            , incolla qui sotto l'indirizzo nella casella, scegli <em>Enabled</em> e
+            riavvia Chrome.
+          </p>
+          <p className="mt-2 select-all break-all rounded bg-black/30 px-2 py-1 font-mono text-amber-50">
+            {origin}
+          </p>
+          <p className="mt-2 text-amber-200/80">
+            In alternativa si serve la pagina in HTTPS con un certificato mkcert, vedi il
+            README.
           </p>
         </div>
       )}
