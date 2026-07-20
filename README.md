@@ -111,8 +111,8 @@ Gli extra:
 
 - `processing`: stack numerico/geo per radar e tracking (numpy, scipy, shapely, ...).
 - `copilot`: SDK Google Gemini per il co-pilota.
-- `voice`: riproduzione audio e riconoscimento vocale (sounddevice, SpeechRecognition,
-  pyaudio). Serve per la voce in uscita e in ingresso.
+- `voice`: riproduzione audio e cattura del microfono (sounddevice, SpeechRecognition).
+  Serve per la voce in uscita e in ingresso.
 
 ### Frontend
 
