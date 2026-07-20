@@ -63,6 +63,38 @@ dallo stesso backend: si apre un'unica pagina su `http://localhost:5700/`.
 
 ## Installazione
 
+### Prerequisiti: Python e Node.js
+
+Se Python e Node.js non sono già installati, la via più rapida su Windows 10/11 è
+`winget`, da PowerShell:
+
+```
+winget install Python.Python.3.12
+winget install OpenJS.NodeJS.LTS
+```
+
+In alternativa si scaricano gli installer da python.org/downloads e da nodejs.org
+(versione LTS). Due avvertenze sull'installer di Python: va spuntata la casella
+**"Add python.exe to PATH"** nella prima schermata, altrimenti i comandi qui sotto non
+vengono trovati; e conviene restare su **Python 3.12**, perché per le versioni appena
+uscite le ruote precompilate di numpy, scipy e rasterio per Windows a volte non ci sono
+ancora e l'installazione fallisce provando a compilare da sorgente. npm è incluso in
+Node.js e non va installato a parte.
+
+Si chiude e si riapre il terminale, poi si verifica:
+
+```
+python --version
+node --version
+npm --version
+```
+
+Servono Python 3.11 o superiore e Node 18 o superiore.
+
+Se `python --version` apre il Microsoft Store invece di rispondere, sono gli alias di
+esecuzione di Windows: **Impostazioni → App → Impostazioni avanzate delle app → Alias di
+esecuzione app**, si disattivano `python.exe` e `python3.exe`.
+
 ### Backend
 
 Dalla cartella `backend/` si crea un ambiente virtuale e si installano le dipendenze
