@@ -9,6 +9,7 @@ GPS, e il co-pilota commenta la situazione a voce mentre si è in movimento.
 Gli allarmi critici (fulmini vicini, rischio nubifragio) sono deterministici e vengono pronunciati con
 priorità assoluta; il co-pilota AI non li genera e non li può contraddire.
 
+![Alt Text](imgexample.png)
 ## Cosa fa
 
 - **Radar** in tempo quasi reale dal mosaico VMI della Protezione Civile (DPC), con
