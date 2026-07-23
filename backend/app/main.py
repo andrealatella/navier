@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -57,11 +59,16 @@ def main() -> None:
     """Run the server on the configured host/port (default :5700)."""
     import uvicorn
 
+    reload_options: dict[str, Any] = {}
+    if settings.uvicorn_reload:
+        reload_options = {"reload_dirs": [str(Path(__file__).resolve().parent)]}
+
     uvicorn.run(
         "app.main:app",
         host=settings.host,
         port=settings.port,
         reload=settings.uvicorn_reload,
+        **reload_options,
     )
 
 
