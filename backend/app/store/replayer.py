@@ -50,6 +50,10 @@ class SessionReplayer:
     def frames_dir(self) -> Path:
         return self._frames_dir
 
+    @property
+    def playing(self) -> bool:
+        return self._task is not None
+
     def frame_png(self, ts_ms: int) -> bytes | None:
         """Serve a recorded radar frame by timestamp (replay fallback for the endpoint)."""
         f = self._frames_dir / f"{ts_ms}.png"
