@@ -187,18 +187,25 @@ async def _health_loop() -> None:
 
 async def start() -> None:
     """Start the backend: replay a recorded session if REPLAY_FILE is set, else go live."""
-    if settings.replay_file:
-        await _start_replay()
-    else:
-        await _start_live()
+    if settings.replay_file and await _start_replay():
+        return
+    await _start_live()
 
 
-async def _start_replay() -> None:
+async def _start_replay() -> bool:
     """Replay mode: re-broadcast a recorded session; no ingestors/processor."""
     global _replayer
-    _replayer = SessionReplayer(settings.replay_file, hub.broadcast, settings.replay_speed)
-    await _replayer.start()
+    replayer = SessionReplayer(settings.replay_file, hub.broadcast, settings.replay_speed)
+    await replayer.start()
+    if not replayer.playing:
+        logger.error(
+            "REPLAY_FILE=%r non riproducibile: passo in modalita' live", settings.replay_file
+        )
+        await replayer.stop()
+        return False
+    _replayer = replayer
     logger.info("REPLAY mode: %s (%.2fx)", settings.replay_file, settings.replay_speed)
+    return True
 
 
 async def _start_live() -> None:
