@@ -26,11 +26,12 @@ export function RadarPanel() {
   const setRadarOpacity = useStore((s) => s.setRadarOpacity);
   const setRadarVisible = useStore((s) => s.setRadarVisible);
 
-  const n = radar.frameTimes.length;
+  const frameTimes = radar.frameTimes;
+  const n = frameTimes.length;
 
   useEffect(() => {
-    if (n > 0) radarLayer.showIndex(index);
-  }, [index, n]);
+    if (n > 0) radarLayer.showIndex(Math.min(index, n - 1));
+  }, [index, n, frameTimes]);
 
   useEffect(() => radarLayer.setOpacity(opacity), [opacity]);
   useEffect(() => radarLayer.setVisible(visible), [visible]);
