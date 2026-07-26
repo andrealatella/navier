@@ -52,3 +52,29 @@ class OrsProvider(RoutingProvider):
             duration_min=round(summary.get("duration", 0.0) / 60.0, 1),
             coordinates=[[float(lon), float(lat)] for lon, lat in geom["coordinates"]],
         )
+
+    async def nearest(self, point: LonLat) -> LonLat | None:
+        url = f"{self._base}/v2/snap/driving-car/geojson"
+        body = {"locations": [[point[0], point[1]]], "radius": 5000}
+        headers = {
+            "Authorization": self._key,
+            "Content-Type": "application/json",
+            "User-Agent": self._ua,
+        }
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                r = await client.post(url, json=body, headers=headers)
+            r.raise_for_status()
+            data = r.json()
+        except Exception as e:  # noqa: BLE001
+            logger.warning("ORS snap failed: %s", e)
+            return None
+
+        feats = data.get("features") or []
+        if not feats:
+            return None
+        geom = feats[0].get("geometry", {}) or {}
+        coords = geom.get("coordinates") or []
+        if geom.get("type") != "Point" or len(coords) < 2:
+            return None
+        return (float(coords[0]), float(coords[1]))
