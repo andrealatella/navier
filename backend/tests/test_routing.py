@@ -13,14 +13,28 @@ from app.models import CellSnapshot, Motion, UserPosition
 from app.routing import ors as ors_mod
 from app.routing import osrm as osrm_mod
 from app.routing.base import Route, RoutingProvider
-from app.routing.intercept import intercept_point, maps_deeplink, route_crosses_cones
+from app.routing.intercept import (
+    cell_eta_to_point_min,
+    feasibility,
+    inflow_flank,
+    intercept_point,
+    maps_deeplink,
+    road_intercept_point,
+    route_crosses_cones,
+)
 from app.routing.ors import OrsProvider
 from app.routing.osrm import OsrmProvider
 
 UTC = dt.UTC
 
 
-def make_cell(cell_id: int = 3, *, motion: Motion | None, cone: dict | None = None) -> CellSnapshot:
+def make_cell(
+    cell_id: int = 3,
+    *,
+    motion: Motion | None,
+    cone: dict | None = None,
+    deviation: float | None = None,
+) -> CellSnapshot:
     return CellSnapshot(
         id=cell_id,
         ts=dt.datetime.now(UTC),
@@ -30,6 +44,7 @@ def make_cell(cell_id: int = 3, *, motion: Motion | None, cone: dict | None = No
         max_dbz=58.0,
         motion=motion,
         severity=82,
+        motion_deviation_deg=deviation,
         forecast_cones=[cone] if cone else [],
     )
 
@@ -66,6 +81,116 @@ def test_intercept_side_follows_the_user() -> None:
     south_user = intercept_point(cell, (8.62, 44.2), 30.0, 8.0)[0]
     assert north_user[1] > cell.centroid[1]
     assert south_user[1] < cell.centroid[1]
+
+
+def test_right_mover_overrides_the_user_side() -> None:
+    cell = make_cell(motion=Motion(speed_kmh=40.0, bearing_deg=90.0), deviation=25.0)
+    perp, why = inflow_flank(cell, (8.62, 45.2))
+    assert why == "destrorsa"
+    assert perp == 180.0
+    target = intercept_point(cell, (8.62, 45.2), 30.0, 8.0)[0]
+    assert target[1] < cell.centroid[1]
+
+
+def test_left_mover_uses_the_left_flank() -> None:
+    cell = make_cell(motion=Motion(speed_kmh=40.0, bearing_deg=90.0), deviation=-25.0)
+    perp, why = inflow_flank(cell, (8.62, 44.2))
+    assert why == "sinistrorsa"
+    assert perp == 0.0
+    target = intercept_point(cell, (8.62, 44.2), 30.0, 8.0)[0]
+    assert target[1] > cell.centroid[1]
+
+
+def test_supercell_note_mentions_the_inflow_side() -> None:
+    cell = make_cell(motion=Motion(speed_kmh=40.0, bearing_deg=90.0), deviation=25.0)
+    note = intercept_point(cell, (8.5, 44.6), 30.0, 8.0)[2]
+    assert "inflow" in note
+    assert "destrorsa" in note
+
+
+def test_cell_eta_is_signed_along_the_motion_vector() -> None:
+    from app.processing.geo import destination
+
+    cell = make_cell(motion=Motion(speed_kmh=60.0, bearing_deg=90.0))
+    ahead = destination(8.62, 44.71, 90.0, 30.0)
+    behind = destination(8.62, 44.71, 270.0, 30.0)
+    assert abs(cell_eta_to_point_min(cell, ahead) - 30.0) < 1.0
+    assert abs(cell_eta_to_point_min(cell, behind) + 30.0) < 1.0
+
+
+def test_feasibility_verdicts() -> None:
+    from app.processing.geo import destination
+
+    cell = make_cell(motion=Motion(speed_kmh=60.0, bearing_deg=90.0))
+    ahead = destination(8.62, 44.71, 90.0, 30.0)
+    behind = destination(8.62, 44.71, 270.0, 30.0)
+
+    assert feasibility(cell, ahead, 20.0, 5.0)["verdict"] == "in_tempo"
+    assert feasibility(cell, ahead, 28.0, 5.0)["verdict"] == "limite"
+    assert feasibility(cell, ahead, 45.0, 5.0)["verdict"] == "tardi"
+    assert feasibility(cell, behind, 10.0, 5.0)["verdict"] == "si_allontana"
+    assert feasibility(None, ahead, 10.0, 5.0) is None
+
+
+def test_feasibility_none_for_stationary_cell() -> None:
+    cell = make_cell(motion=None)
+    assert feasibility(cell, (8.7, 44.8), 10.0, 5.0) is None
+
+
+async def _snap_identity(p: tuple[float, float]) -> tuple[float, float]:
+    return p
+
+
+async def _snap_none(_p: tuple[float, float]) -> None:
+    return None
+
+
+def _snap_shift(dlon: float, dlat: float):
+    async def fn(p: tuple[float, float]) -> tuple[float, float]:
+        return (p[0] + dlon, p[1] + dlat)
+
+    return fn
+
+
+async def test_road_intercept_keeps_a_point_already_on_a_road() -> None:
+    cell = make_cell(motion=Motion(speed_kmh=40.0, bearing_deg=90.0))
+    base = intercept_point(cell, (8.5, 44.6), 30.0, 8.0)[0]
+    point, is_intercept, note = await road_intercept_point(
+        cell, (8.5, 44.6), 30.0, 8.0, _snap_identity, min_core_km=5.0, max_snap_km=3.0
+    )
+    assert is_intercept is True
+    assert point == base
+    assert "su strada" in note
+
+
+async def test_road_intercept_falls_back_when_nothing_snaps() -> None:
+    cell = make_cell(motion=Motion(speed_kmh=40.0, bearing_deg=90.0))
+    base = intercept_point(cell, (8.5, 44.6), 30.0, 8.0)[0]
+    point, _is_intercept, note = await road_intercept_point(
+        cell, (8.5, 44.6), 30.0, 8.0, _snap_none, min_core_km=5.0, max_snap_km=3.0
+    )
+    assert point == base
+    assert "geometrico" in note
+
+
+async def test_road_intercept_rejects_a_far_snap() -> None:
+    cell = make_cell(motion=Motion(speed_kmh=40.0, bearing_deg=90.0))
+    base = intercept_point(cell, (8.5, 44.6), 30.0, 8.0)[0]
+    point, _is_intercept, note = await road_intercept_point(
+        cell, (8.5, 44.6), 30.0, 8.0, _snap_shift(0.5, 0.5), min_core_km=5.0, max_snap_km=3.0
+    )
+    assert point == base
+    assert "geometrico" in note
+
+
+async def test_road_intercept_skips_snapping_for_a_stationary_cell() -> None:
+    cell = make_cell(motion=None)
+    point, is_intercept, note = await road_intercept_point(
+        cell, (8.5, 44.6), 30.0, 8.0, _snap_identity, min_core_km=5.0, max_snap_km=3.0
+    )
+    assert is_intercept is False
+    assert point == cell.centroid
+    assert "ferma" in note
 
 
 def _cone(coords: list[list[float]]) -> dict:
