@@ -1,19 +1,69 @@
-"""Intercept point, cone-crossing check and the Google Maps deep link."""
+"""Intercept point, road snapping, feasibility, cone crossing and the Maps deep link."""
 
 from __future__ import annotations
 
+import asyncio
 import math
+from collections.abc import Awaitable, Callable
 
 from ..models import CellSnapshot
-from ..processing.geo import compass_it, destination
+from ..processing.geo import compass_it, destination, haversine_km
 
 LonLat = tuple[float, float]
+SnapFn = Callable[[LonLat], Awaitable[LonLat | None]]
 
 KM_PER_DEG_LAT = 110.574
+
+_SNAP_GOOD_KM = 0.5
+_FAN = ((-50.0, 1.0), (-25.0, 1.0), (25.0, 1.0), (50.0, 1.0), (0.0, 1.3))
+_CONE_PENALTY_KM = 3.0
+_ANGLE_COST_KM_PER_DEG = 0.02
 
 
 def _km_per_deg_lon(lat: float) -> float:
     return 111.320 * math.cos(math.radians(lat))
+
+
+def _local_km(origin: LonLat, point: LonLat) -> tuple[float, float]:
+    east = (point[0] - origin[0]) * _km_per_deg_lon(origin[1])
+    north = (point[1] - origin[1]) * KM_PER_DEG_LAT
+    return east, north
+
+
+def inflow_flank(cell: CellSnapshot, user: LonLat | None) -> tuple[float, str]:
+    """Compass bearing of the flank to sit on, and what decided it."""
+    if cell.motion is None:
+        return 0.0, "default"
+    bearing = cell.motion.bearing_deg
+    dev = cell.motion_deviation_deg
+    if dev is not None and dev > 0:
+        return (bearing + 90.0) % 360.0, "destrorsa"
+    if dev is not None and dev < 0:
+        return (bearing - 90.0) % 360.0, "sinistrorsa"
+    if user is not None:
+        east, north = _local_km(cell.centroid, user)
+        m_e, m_n = math.sin(math.radians(bearing)), math.cos(math.radians(bearing))
+        cross = m_e * north - m_n * east
+        perp = bearing - 90.0 if cross > 0 else bearing + 90.0
+        return perp % 360.0, "utente"
+    return (bearing + 90.0) % 360.0, "default"
+
+
+def _projected_core(cell: CellSnapshot, horizon_min: float) -> LonLat:
+    lon, lat = cell.centroid
+    if cell.motion is None:
+        return (lon, lat)
+    run_km = cell.motion.speed_kmh * horizon_min / 60.0
+    return destination(lon, lat, cell.motion.bearing_deg, run_km)
+
+
+def _note(perp: float, why: str, offset_km: float, horizon_min: float) -> str:
+    head = f"intercetto sul fianco {compass_it(perp)}"
+    if why == "destrorsa":
+        head += ", lato inflow di una cella destrorsa"
+    elif why == "sinistrorsa":
+        head += ", lato inflow di una cella sinistrorsa"
+    return f"{head} a {offset_km:.0f} km dal nucleo, proiettato a +{horizon_min:.0f}′"
 
 
 def intercept_point(
@@ -22,7 +72,7 @@ def intercept_point(
     horizon_min: float,
     offset_km: float,
 ) -> tuple[LonLat, bool, str]:
-    """Where to head to meet `cell` on its flank."""
+    """Where to head to meet `cell` on its inflow flank."""
     lon, lat = cell.centroid
     if cell.motion is None or cell.motion.speed_kmh < 1.0:
         return (
@@ -31,23 +81,118 @@ def intercept_point(
             "cella ferma: rotta verso la posizione attuale (tieni la distanza)",
         )
 
-    bearing = cell.motion.bearing_deg
-    fwd_lon, fwd_lat = destination(lon, lat, bearing, cell.motion.speed_kmh * horizon_min / 60.0)
+    perp, why = inflow_flank(cell, user)
+    core = _projected_core(cell, horizon_min)
+    target = destination(core[0], core[1], perp, offset_km)
+    return target, True, _note(perp, why, offset_km, horizon_min)
 
-    perp = bearing + 90.0
-    if user is not None:
-        east = (user[0] - lon) * _km_per_deg_lon(lat)
-        north = (user[1] - lat) * KM_PER_DEG_LAT
-        m_e, m_n = math.sin(math.radians(bearing)), math.cos(math.radians(bearing))
-        cross = m_e * north - m_n * east
-        perp = bearing - 90.0 if cross > 0 else bearing + 90.0
 
-    target = destination(fwd_lon, fwd_lat, perp, offset_km)
-    note = (
-        f"intercetto sul fianco {compass_it(perp)} a {offset_km:.0f} km dal nucleo, "
-        f"proiettato a +{horizon_min:.0f}′"
-    )
-    return target, True, note
+async def road_intercept_point(
+    cell: CellSnapshot,
+    user: LonLat | None,
+    horizon_min: float,
+    offset_km: float,
+    snap: SnapFn,
+    *,
+    min_core_km: float,
+    max_snap_km: float,
+) -> tuple[LonLat, bool, str]:
+    """Intercept point pulled onto the road network, best reachable candidate wins."""
+    base, is_intercept, note = intercept_point(cell, user, horizon_min, offset_km)
+    if not is_intercept:
+        return base, is_intercept, note
+
+    core = _projected_core(cell, horizon_min)
+    perp, _why = inflow_flank(cell, user)
+
+    primary = await snap(base)
+    if primary is not None:
+        moved = haversine_km(base[0], base[1], primary[0], primary[1])
+        core_km = haversine_km(core[0], core[1], primary[0], primary[1])
+        if moved <= _SNAP_GOOD_KM and core_km >= min_core_km:
+            return primary, True, note + _snap_suffix(moved)
+
+    raws = [
+        destination(core[0], core[1], (perp + da) % 360.0, offset_km * scale) for da, scale in _FAN
+    ]
+    snapped = await asyncio.gather(*(snap(p) for p in raws), return_exceptions=True)
+
+    best: tuple[float, LonLat, float] | None = None
+    pool: list[tuple[float, LonLat, LonLat]] = []
+    if primary is not None:
+        pool.append((0.0, base, primary))
+    for (da, _scale), raw, got in zip(_FAN, raws, snapped, strict=False):
+        if isinstance(got, BaseException) or got is None:
+            continue
+        pool.append((abs(da), raw, got))
+
+    for angle, raw, point in pool:
+        moved = haversine_km(raw[0], raw[1], point[0], point[1])
+        if moved > max_snap_km:
+            continue
+        if haversine_km(core[0], core[1], point[0], point[1]) < min_core_km:
+            continue
+        score = moved + angle * _ANGLE_COST_KM_PER_DEG
+        if _in_any_cone(point, cell):
+            score += _CONE_PENALTY_KM
+        if best is None or score < best[0]:
+            best = (score, point, moved)
+
+    if best is None:
+        return base, True, note + " · nessuna strada utile vicina, punto geometrico"
+    return best[1], True, note + _snap_suffix(best[2])
+
+
+def _snap_suffix(moved_km: float) -> str:
+    if moved_km <= 0.15:
+        return " · su strada"
+    return f" · spostato su strada di {moved_km:.1f} km"
+
+
+def cell_eta_to_point_min(cell: CellSnapshot, point: LonLat) -> float | None:
+    """Minutes until the cell core reaches `point`, negative once it is past."""
+    if cell.motion is None or cell.motion.speed_kmh < 1.0:
+        return None
+    east, north = _local_km(cell.centroid, point)
+    b = math.radians(cell.motion.bearing_deg)
+    along = east * math.sin(b) + north * math.cos(b)
+    return along / cell.motion.speed_kmh * 60.0
+
+
+def feasibility(
+    cell: CellSnapshot | None,
+    dest: LonLat,
+    drive_min: float,
+    margin_min: float,
+) -> dict | None:
+    """Can we get there before the cell does? The verdict a chaser actually acts on."""
+    if cell is None:
+        return None
+    eta = cell_eta_to_point_min(cell, dest)
+    if eta is None:
+        return None
+    margin = eta - drive_min
+
+    if eta < 0:
+        verdict = "si_allontana"
+        text = f"la cella si allontana dal punto, passata da {abs(eta):.0f} minuti"
+    elif margin >= margin_min:
+        verdict = "in_tempo"
+        text = f"ci arrivi {margin:.0f} minuti prima della cella"
+    elif margin >= 0:
+        verdict = "limite"
+        text = f"al limite, {margin:.0f} minuti di margine"
+    else:
+        verdict = "tardi"
+        text = f"arrivi {abs(margin):.0f} minuti dopo il passaggio della cella"
+
+    return {
+        "drive_min": round(drive_min, 1),
+        "cell_min": round(eta, 1),
+        "margin_min": round(margin, 1),
+        "verdict": verdict,
+        "text": text,
+    }
 
 
 def _point_in_ring(lon: float, lat: float, ring: list[list[float]]) -> bool:
@@ -64,6 +209,14 @@ def _point_in_ring(lon: float, lat: float, ring: list[list[float]]) -> bool:
                 inside = not inside
         j = i
     return inside
+
+
+def _in_any_cone(point: LonLat, cell: CellSnapshot) -> bool:
+    for cone in cell.forecast_cones:
+        ring = cone.get("coordinates", [[]])[0]
+        if len(ring) >= 3 and _point_in_ring(point[0], point[1], ring):
+            return True
+    return False
 
 
 def route_crosses_cones(coordinates: list[list[float]], cells: list[CellSnapshot]) -> list[int]:
