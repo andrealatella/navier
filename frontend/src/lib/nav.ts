@@ -1,6 +1,14 @@
-import { useStore, type RouteInfo } from "../state/store";
+import { useStore, type RouteInfo, type RouteVerdict } from "../state/store";
 import { routeLayer } from "../map/routeLayer";
 import { liveSocket } from "./ws";
+
+interface FeasibilityResponse {
+  drive_min: number;
+  cell_min: number;
+  margin_min: number;
+  verdict: RouteVerdict;
+  text: string;
+}
 
 interface RouteResponse {
   provider: string;
@@ -13,6 +21,7 @@ interface RouteResponse {
   intercept: boolean;
   note: string | null;
   crosses_cone_cell_ids: number[];
+  feasibility: FeasibilityResponse | null;
   maps_url: string;
 }
 
@@ -65,6 +74,15 @@ export async function planRoute(opts?: { dest?: { lat: number; lon: number } }):
       intercept: data.intercept,
       note: data.note,
       crosses: data.crosses_cone_cell_ids ?? [],
+      feasibility: data.feasibility
+        ? {
+            driveMin: data.feasibility.drive_min,
+            cellMin: data.feasibility.cell_min,
+            marginMin: data.feasibility.margin_min,
+            verdict: data.feasibility.verdict,
+            text: data.feasibility.text,
+          }
+        : null,
       dest: data.dest,
       mapsUrl: data.maps_url,
     };
