@@ -28,6 +28,8 @@ class RadarLayer {
   private opacity = 0.8;
   private visible = true;
   private shownIndex = -1;
+  private shownTs: number | null = null;
+  private shownUrl: string | null = null;
   private pending: RadarData | null = null;
 
   attach(map: MLMap): void {
@@ -46,9 +48,12 @@ class RadarLayer {
       this.clear();
       this.kind = data.kind;
     }
+    const prevTs = this.shownTs;
+    const wasAtLast = this.frames.length > 0 && this.shownIndex === this.frames.length - 1;
     this.frames = data.frames;
+    const target = this.pickIndex(prevTs, wasAtLast);
 
-    if (data.kind === "image") this.syncImage();
+    if (data.kind === "image") this.syncImage(target);
     else if (data.kind === "tiles") this.syncTiles();
 
     if (data.kind === "image") {
@@ -59,18 +64,29 @@ class RadarLayer {
         }
       }
     }
+
+    if (target >= 0) this.showIndex(target);
   }
 
-  private syncImage(): void {
+  private pickIndex(prevTs: number | null, wasAtLast: boolean): number {
+    if (!this.frames.length) return -1;
+    if (!wasAtLast && prevTs != null) {
+      const found = this.frames.findIndex((f) => f.ts === prevTs);
+      if (found >= 0) return found;
+    }
+    return this.frames.length - 1;
+  }
+
+  private syncImage(index: number): void {
     const map = this.map;
-    if (!map || !this.frames.length) return;
-    const last = this.frames[this.frames.length - 1];
-    if (!last.url || !last.bounds) return;
+    if (!map || index < 0) return;
+    const frame = this.frames[index];
+    if (!frame.url || !frame.bounds) return;
     if (!map.getSource(IMG_SOURCE)) {
       map.addSource(IMG_SOURCE, {
         type: "image",
-        url: last.url,
-        coordinates: this.corners(last.bounds),
+        url: frame.url,
+        coordinates: this.corners(frame.bounds),
       });
       map.addLayer(
         {
@@ -85,7 +101,9 @@ class RadarLayer {
         },
         map.getLayer(BEFORE_ID) ? BEFORE_ID : undefined,
       );
-      this.shownIndex = this.frames.length - 1;
+      this.shownIndex = index;
+      this.shownTs = frame.ts;
+      this.shownUrl = frame.url;
     }
   }
 
@@ -118,27 +136,25 @@ class RadarLayer {
     const map = this.map;
     if (!map || i < 0 || i >= this.frames.length) return;
 
+    const f = this.frames[i];
     if (this.kind === "image") {
-      const f = this.frames[i];
       const src = map.getSource(IMG_SOURCE) as ImageSource | undefined;
-      if (src && f.url && f.bounds) {
+      if (src && f.url && f.bounds && f.url !== this.shownUrl) {
         src.updateImage({ url: f.url, coordinates: this.corners(f.bounds) });
+        this.shownUrl = f.url;
       }
     } else if (this.kind === "tiles") {
-      const prev = this.frames[this.shownIndex];
-      if (prev && map.getLayer(TILE_PREFIX + prev.ts)) {
-        map.setPaintProperty(TILE_PREFIX + prev.ts, "raster-opacity", 0);
+      const activeId = TILE_PREFIX + f.ts;
+      const prevId = this.shownTs != null ? TILE_PREFIX + this.shownTs : null;
+      if (prevId && prevId !== activeId && map.getLayer(prevId)) {
+        map.setPaintProperty(prevId, "raster-opacity", 0);
       }
-      const f = this.frames[i];
-      if (map.getLayer(TILE_PREFIX + f.ts)) {
-        map.setPaintProperty(
-          TILE_PREFIX + f.ts,
-          "raster-opacity",
-          this.visible ? this.opacity : 0,
-        );
+      if (map.getLayer(activeId)) {
+        map.setPaintProperty(activeId, "raster-opacity", this.visible ? this.opacity : 0);
       }
     }
     this.shownIndex = i;
+    this.shownTs = f.ts;
   }
 
   setOpacity(o: number): void {
@@ -157,11 +173,9 @@ class RadarLayer {
     const op = this.visible ? this.opacity : 0;
     if (this.kind === "image" && map.getLayer(IMG_LAYER)) {
       map.setPaintProperty(IMG_LAYER, "raster-opacity", op);
-    } else if (this.kind === "tiles") {
-      const cur = this.frames[this.shownIndex];
-      if (cur && map.getLayer(TILE_PREFIX + cur.ts)) {
-        map.setPaintProperty(TILE_PREFIX + cur.ts, "raster-opacity", op);
-      }
+    } else if (this.kind === "tiles" && this.shownTs != null) {
+      const id = TILE_PREFIX + this.shownTs;
+      if (map.getLayer(id)) map.setPaintProperty(id, "raster-opacity", op);
     }
   }
 
@@ -192,6 +206,8 @@ class RadarLayer {
     for (const id of this.tileLayerIds) this.removeTileLayer(id);
     this.tileLayerIds = [];
     this.shownIndex = -1;
+    this.shownTs = null;
+    this.shownUrl = null;
   }
 
   detach(): void {
