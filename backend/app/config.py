@@ -55,6 +55,9 @@ class Settings(BaseSettings):
     route_timeout_s: float = 20.0
     intercept_horizon_min: float = 30.0
     intercept_offset_km: float = 8.0
+    intercept_min_core_km: float = 5.0
+    intercept_snap_max_km: float = 3.0
+    intercept_margin_min: float = 5.0
 
     gpsd_host: str = "127.0.0.1"
     gpsd_port: int = 2947
