@@ -34,6 +34,8 @@ export {
   History as IconHistory,
   Route as IconRoad,
   Gauge as IconGauge,
+  Timer as IconTimer,
+  CircleCheck as IconOk,
 } from "lucide-react";
 
 export function Logo({ className = "h-5 w-5" }: { className?: string }) {
