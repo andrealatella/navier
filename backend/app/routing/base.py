@@ -32,3 +32,7 @@ class RoutingProvider(ABC):
     @abstractmethod
     async def route(self, start: LonLat, dest: LonLat) -> Route | None:
         """Route from `start` to `dest` (both lon/lat). None if unavailable."""
+
+    async def nearest(self, point: LonLat) -> LonLat | None:
+        """Snap `point` onto the drivable road network. None when unsupported."""
+        return None
