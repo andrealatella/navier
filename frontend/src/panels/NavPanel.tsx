@@ -1,7 +1,23 @@
-import { useStore } from "../state/store";
+import { useStore, type RouteFeasibility, type RouteVerdict } from "../state/store";
 import { liveSocket } from "../lib/ws";
 import { planRoute, clearRoute, openInMaps } from "../lib/nav";
-import { IconRoute, IconCell, IconDirect, IconMap, IconClose, IconWarning } from "../ui/icons";
+import {
+  IconRoute,
+  IconCell,
+  IconDirect,
+  IconMap,
+  IconClose,
+  IconWarning,
+  IconTimer,
+  IconOk,
+} from "../ui/icons";
+
+const VERDICT_STYLE: Record<RouteVerdict, string> = {
+  in_tempo: "border-emerald-500/40 bg-emerald-950/50 text-emerald-200",
+  limite: "border-amber-500/40 bg-amber-950/50 text-amber-200",
+  tardi: "border-rose-500/40 bg-rose-950/50 text-rose-200",
+  si_allontana: "border-rose-500/40 bg-rose-950/50 text-rose-200",
+};
 
 export function NavPanel() {
   const route = useStore((s) => s.route);
@@ -98,6 +114,8 @@ export function NavPanel() {
               <span className="ml-auto text-[11px] uppercase text-slate-500">{route.provider}</span>
             </div>
 
+            {route.feasibility && <Feasibility data={route.feasibility} chase={chase} />}
+
             {route.intercept && route.note && (
               <div className="mt-1 text-xs text-slate-400">{route.note}</div>
             )}
@@ -126,6 +144,26 @@ export function NavPanel() {
             </div>
           </>
         )}
+      </div>
+    </div>
+  );
+}
+
+function Feasibility({ data, chase }: { data: RouteFeasibility; chase: boolean }) {
+  const Icon =
+    data.verdict === "in_tempo" ? IconOk : data.verdict === "limite" ? IconTimer : IconWarning;
+  return (
+    <div
+      className={`mt-2 rounded-md border px-2 py-1.5 ${VERDICT_STYLE[data.verdict]} ${
+        chase ? "text-base" : "text-xs"
+      }`}
+    >
+      <div className="flex items-center gap-1.5">
+        <Icon className={chase ? "h-4 w-4 shrink-0" : "h-3.5 w-3.5 shrink-0"} strokeWidth={2} />
+        <span className="font-semibold">{data.text}</span>
+      </div>
+      <div className="mt-0.5 pl-5 text-[11px] tabular-nums opacity-70">
+        guida {data.driveMin.toFixed(0)}′ · cella {data.cellMin.toFixed(0)}′
       </div>
     </div>
   );
