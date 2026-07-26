@@ -111,6 +111,16 @@ export interface UserPos {
   source: string;
 }
 
+export type RouteVerdict = "in_tempo" | "limite" | "tardi" | "si_allontana";
+
+export interface RouteFeasibility {
+  driveMin: number;
+  cellMin: number;
+  marginMin: number;
+  verdict: RouteVerdict;
+  text: string;
+}
+
 export interface RouteInfo {
   provider: string;
   distanceKm: number;
@@ -119,6 +129,7 @@ export interface RouteInfo {
   intercept: boolean;
   note: string | null;
   crosses: number[];
+  feasibility: RouteFeasibility | null;
   dest: { lat: number; lon: number };
   mapsUrl: string;
 }
