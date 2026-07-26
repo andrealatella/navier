@@ -10,7 +10,12 @@ from fastapi.responses import FileResponse
 from .. import __version__, runtime
 from ..config import settings
 from ..models import RouteRequest
-from ..routing.intercept import intercept_point, maps_deeplink, route_crosses_cones
+from ..routing.intercept import (
+    feasibility,
+    maps_deeplink,
+    road_intercept_point,
+    route_crosses_cones,
+)
 from ..routing.service import build_provider
 from ..store.allerte import allerte_store
 from ..store.hub import hub
@@ -99,17 +104,23 @@ async def route(req: RouteRequest) -> dict:
     intercept = False
     note: str | None = None
     cell_id: int | None = None
+    cell = None
+    provider = build_provider(settings)
+
     if req.cell_id is not None:
         cell = proc.find_cell(req.cell_id) if proc is not None else None
         if cell is None:
             raise HTTPException(status_code=404, detail=f"cella {req.cell_id} non tracciata")
         cell_id = cell.id
         if req.mode == "intercept":
-            dest, intercept, note = intercept_point(
+            dest, intercept, note = await road_intercept_point(
                 cell,
                 start,
                 settings.intercept_horizon_min,
                 settings.intercept_offset_km,
+                provider.nearest,
+                min_core_km=settings.intercept_min_core_km,
+                max_snap_km=settings.intercept_snap_max_km,
             )
         else:
             dest = (cell.centroid[0], cell.centroid[1])
@@ -118,13 +129,13 @@ async def route(req: RouteRequest) -> dict:
     else:
         raise HTTPException(status_code=400, detail="serve cell_id oppure dest_lat/dest_lon")
 
-    provider = build_provider(settings)
     r = await provider.route(start, dest)
     if r is None:
         raise HTTPException(status_code=502, detail=f"routing non disponibile ({provider.name})")
 
     cells = proc.current_cells() if proc is not None else []
     crossed = route_crosses_cones(r.coordinates, cells)
+    feas = feasibility(cell, dest, r.duration_min, settings.intercept_margin_min)
 
     return {
         "provider": r.provider,
@@ -137,6 +148,7 @@ async def route(req: RouteRequest) -> dict:
         "intercept": intercept,
         "note": note,
         "crosses_cone_cell_ids": crossed,
+        "feasibility": feas,
         "maps_url": maps_deeplink(dest[1], dest[0]),
     }
 
