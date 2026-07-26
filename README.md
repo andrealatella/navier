@@ -29,7 +29,9 @@ priorità assoluta; il co-pilota AI non li genera e non li può contraddire.
   un beep, si pronuncia una frase, viene trascritta (Google STT gratuito) e girata al
   co-pilota. Nessuna parola di attivazione: l'ascolto parte solo su richiesta.
 - **Navigazione**: calcolo di un percorso verso una cella o verso un punto di
-  intercetto, con hand-off a Google Maps sul telefono.
+  intercetto scelto sul fianco d'inflow, agganciato alla rete stradale e accompagnato
+  dal verdetto di fattibilità (se ci arrivi prima della cella), con hand-off a Google
+  Maps sul telefono.
 - **Pianificazione**: heatmap di CAPE/shear (Open-Meteo, modello ICON-2I) e outlook
   convettivi PRETEMP + ESTOFEX; bollettini di criticità ufficiali DPC come overlay.
 - **Registrazione e replay** delle sessioni per la revisione post-caccia.
