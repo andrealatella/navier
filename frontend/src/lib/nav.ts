@@ -1,4 +1,10 @@
-import { useStore, type RouteInfo, type RouteVerdict } from "../state/store";
+import {
+  useStore,
+  type RouteInfo,
+  type RouteVerdict,
+  type ViewLight,
+  type ViewQuality,
+} from "../state/store";
 import { routeLayer } from "../map/routeLayer";
 import { liveSocket } from "./ws";
 
@@ -7,6 +13,18 @@ interface FeasibilityResponse {
   cell_min: number;
   margin_min: number;
   verdict: RouteVerdict;
+  text: string;
+}
+
+interface ViewResponse {
+  rain_blocked_km: number;
+  rain_max_mmh: number;
+  rain_known: boolean;
+  sun_azimuth_deg: number;
+  sun_elevation_deg: number;
+  light: ViewLight;
+  score: number;
+  quality: ViewQuality;
   text: string;
 }
 
@@ -22,6 +40,7 @@ interface RouteResponse {
   note: string | null;
   crosses_cone_cell_ids: number[];
   feasibility: FeasibilityResponse | null;
+  view: ViewResponse | null;
   maps_url: string;
 }
 
@@ -81,6 +100,19 @@ export async function planRoute(opts?: { dest?: { lat: number; lon: number } }):
             marginMin: data.feasibility.margin_min,
             verdict: data.feasibility.verdict,
             text: data.feasibility.text,
+          }
+        : null,
+      view: data.view
+        ? {
+            rainBlockedKm: data.view.rain_blocked_km,
+            rainMaxMmh: data.view.rain_max_mmh,
+            rainKnown: data.view.rain_known,
+            sunAzimuthDeg: data.view.sun_azimuth_deg,
+            sunElevationDeg: data.view.sun_elevation_deg,
+            light: data.view.light,
+            score: data.view.score,
+            quality: data.view.quality,
+            text: data.view.text,
           }
         : null,
       dest: data.dest,
