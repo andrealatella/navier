@@ -8,6 +8,8 @@ from collections.abc import Awaitable, Callable
 
 from ..models import CellSnapshot
 from ..processing.geo import compass_it, destination, haversine_km
+from ..processing.sun import SolarPosition
+from .visibility import RainFn, ViewProbe, sight_penalty_km
 
 LonLat = tuple[float, float]
 SnapFn = Callable[[LonLat], Awaitable[LonLat | None]]
@@ -96,11 +98,16 @@ async def road_intercept_point(
     *,
     min_core_km: float,
     max_snap_km: float,
+    rain_at: RainFn | None = None,
+    sun: SolarPosition | None = None,
+    probe: ViewProbe | None = None,
 ) -> tuple[LonLat, bool, str]:
     """Intercept point pulled onto the road network, best reachable candidate wins."""
     base, is_intercept, note = intercept_point(cell, user, horizon_min, offset_km)
     if not is_intercept:
         return base, is_intercept, note
+
+    probe = probe or ViewProbe()
 
     core = _projected_core(cell, horizon_min)
     perp, _why = inflow_flank(cell, user)
@@ -109,7 +116,8 @@ async def road_intercept_point(
     if primary is not None:
         moved = haversine_km(base[0], base[1], primary[0], primary[1])
         core_km = haversine_km(core[0], core[1], primary[0], primary[1])
-        if moved <= _SNAP_GOOD_KM and core_km >= min_core_km:
+        clear = sight_penalty_km(primary, cell, probe, rain_at, sun) <= 0.0
+        if moved <= _SNAP_GOOD_KM and core_km >= min_core_km and clear:
             return primary, True, note + _snap_suffix(moved)
 
     raws = [
@@ -135,6 +143,7 @@ async def road_intercept_point(
         score = moved + angle * _ANGLE_COST_KM_PER_DEG
         if _in_any_cone(point, cell):
             score += _CONE_PENALTY_KM
+        score += sight_penalty_km(point, cell, probe, rain_at, sun)
         if best is None or score < best[0]:
             best = (score, point, moved)
 
