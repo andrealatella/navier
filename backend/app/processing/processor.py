@@ -252,6 +252,11 @@ class Processor:
     def find_cell(self, cell_id: int):
         return next((c for c in self._cells if c.id == cell_id), None)
 
+    def sample_sri(self, lon: float, lat: float) -> float | None:
+        """Surface rain rate at a point, from the freshest DPC SRI grid."""
+        grid = self._fresh(self._sri_grid, datetime.now(UTC))
+        return grid.sample(lon, lat) if grid is not None else None
+
     def _nearest_strike_km(self, now: datetime) -> float | None:
         if self._user is None:
             return None
