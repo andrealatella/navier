@@ -17,6 +17,7 @@ from ..routing.intercept import (
     route_crosses_cones,
 )
 from ..routing.service import build_provider
+from ..routing.visibility import ViewProbe, sun_for, view_quality
 from ..store.allerte import allerte_store
 from ..store.hub import hub
 from ..store.memory import lightning_store
@@ -106,6 +107,12 @@ async def route(req: RouteRequest) -> dict:
     cell_id: int | None = None
     cell = None
     provider = build_provider(settings)
+    probe = ViewProbe(
+        step_km=settings.view_step_km,
+        standoff_km=settings.view_standoff_km,
+        threshold_mmh=settings.view_rain_mmh,
+    )
+    rain_at = proc.sample_sri if proc is not None else None
 
     if req.cell_id is not None:
         cell = proc.find_cell(req.cell_id) if proc is not None else None
@@ -121,6 +128,9 @@ async def route(req: RouteRequest) -> dict:
                 provider.nearest,
                 min_core_km=settings.intercept_min_core_km,
                 max_snap_km=settings.intercept_snap_max_km,
+                rain_at=rain_at,
+                sun=sun_for(cell),
+                probe=probe,
             )
         else:
             dest = (cell.centroid[0], cell.centroid[1])
@@ -136,6 +146,7 @@ async def route(req: RouteRequest) -> dict:
     cells = proc.current_cells() if proc is not None else []
     crossed = route_crosses_cones(r.coordinates, cells)
     feas = feasibility(cell, dest, r.duration_min, settings.intercept_margin_min)
+    view = view_quality(dest, cell, probe, rain_at=rain_at) if cell is not None else None
 
     return {
         "provider": r.provider,
@@ -149,6 +160,7 @@ async def route(req: RouteRequest) -> dict:
         "note": note,
         "crosses_cone_cell_ids": crossed,
         "feasibility": feas,
+        "view": view,
         "maps_url": maps_deeplink(dest[1], dest[0]),
     }
 
