@@ -183,6 +183,41 @@ async def test_road_intercept_rejects_a_far_snap() -> None:
     assert "geometrico" in note
 
 
+async def test_rain_pushes_the_intercept_to_the_clear_side() -> None:
+    from app.routing.visibility import ViewProbe, rain_on_sight
+
+    probe = ViewProbe()
+    cell = make_cell(motion=Motion(speed_kmh=35.0, bearing_deg=90.0))
+
+    def wet_east(lon: float, _lat: float) -> float:
+        return 30.0 if lon > 8.78 else 0.0
+
+    dry_point = (
+        await road_intercept_point(
+            cell, (8.62, 44.2), 30.0, 8.0, _snap_identity, min_core_km=5.0, max_snap_km=3.0
+        )
+    )[0]
+    wet_point = (
+        await road_intercept_point(
+            cell,
+            (8.62, 44.2),
+            30.0,
+            8.0,
+            _snap_identity,
+            min_core_km=5.0,
+            max_snap_km=3.0,
+            rain_at=wet_east,
+            probe=probe,
+        )
+    )[0]
+
+    assert wet_point != dry_point
+    assert (
+        rain_on_sight(wet_point, cell, wet_east, probe).blocked_km
+        < rain_on_sight(dry_point, cell, wet_east, probe).blocked_km
+    )
+
+
 async def test_road_intercept_skips_snapping_for_a_stationary_cell() -> None:
     cell = make_cell(motion=None)
     point, is_intercept, note = await road_intercept_point(
@@ -305,12 +340,21 @@ class _FakeProvider(RoutingProvider):
 
 
 class _FakeProc:
-    def __init__(self, user: UserPosition | None, cells: list[CellSnapshot]) -> None:
+    def __init__(
+        self,
+        user: UserPosition | None,
+        cells: list[CellSnapshot],
+        rain_mmh: float | None = None,
+    ) -> None:
         self._user = user
         self._cells = cells
+        self._rain = rain_mmh
 
     def current_user(self) -> UserPosition | None:
         return self._user
+
+    def sample_sri(self, _lon: float, _lat: float) -> float | None:
+        return self._rain
 
     def find_cell(self, cell_id: int) -> CellSnapshot | None:
         return next((c for c in self._cells if c.id == cell_id), None)
@@ -322,8 +366,8 @@ class _FakeProc:
 client = TestClient(app)
 
 
-def _wire_processor(monkeypatch, user, cells, route_coords) -> None:
-    monkeypatch.setattr(rest.runtime, "processor", lambda: _FakeProc(user, cells))
+def _wire_processor(monkeypatch, user, cells, route_coords, rain_mmh=None) -> None:
+    monkeypatch.setattr(rest.runtime, "processor", lambda: _FakeProc(user, cells, rain_mmh))
     monkeypatch.setattr(rest, "build_provider", lambda s: _FakeProvider(route_coords))
 
 
@@ -341,6 +385,36 @@ def test_route_endpoint_intercept_flags_cone_crossing(monkeypatch) -> None:
     assert body["cell_id"] == 3
     assert body["crosses_cone_cell_ids"] == [3]
     assert body["maps_url"].startswith("https://www.google.com/maps/dir/")
+
+
+def test_route_endpoint_reports_view_and_feasibility(monkeypatch) -> None:
+    cell = make_cell(motion=Motion(speed_kmh=30.0, bearing_deg=110.0))
+    user = UserPosition(lat=44.6, lon=8.5, source="manual")
+    _wire_processor(monkeypatch, user, [cell], [[8.7, 44.75], [8.85, 44.73]], rain_mmh=0.0)
+
+    resp = client.post("/api/route", json={"cell_id": 3, "mode": "intercept"})
+    assert resp.status_code == 200
+    body = resp.json()
+
+    feas = body["feasibility"]
+    assert feas["verdict"] in {"in_tempo", "limite", "tardi", "si_allontana"}
+    assert feas["drive_min"] == 20.0
+
+    view = body["view"]
+    assert view["rain_known"] is True
+    assert view["rain_blocked_km"] == 0.0
+    assert view["quality"] in {"buona", "media", "scarsa"}
+    assert view["light"] in {"controluce", "laterale", "illuminata", "crepuscolo", "notte"}
+    assert -90.0 <= view["sun_elevation_deg"] <= 90.0
+    assert 0.0 <= view["sun_azimuth_deg"] <= 360.0
+
+
+def test_route_endpoint_view_is_absent_for_a_raw_point(monkeypatch) -> None:
+    user = UserPosition(lat=44.6, lon=8.5, source="manual")
+    _wire_processor(monkeypatch, user, [], [[8.5, 44.6], [8.62, 44.71]])
+    resp = client.post("/api/route", json={"dest_lat": 44.71, "dest_lon": 8.62})
+    assert resp.status_code == 200
+    assert resp.json()["view"] is None
 
 
 def test_route_endpoint_without_position_is_409(monkeypatch) -> None:
