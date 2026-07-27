@@ -1,4 +1,10 @@
-import { useStore, type RouteFeasibility, type RouteVerdict } from "../state/store";
+import {
+  useStore,
+  type RouteFeasibility,
+  type RouteVerdict,
+  type RouteView,
+  type ViewQuality,
+} from "../state/store";
 import { liveSocket } from "../lib/ws";
 import { planRoute, clearRoute, openInMaps } from "../lib/nav";
 import {
@@ -10,6 +16,7 @@ import {
   IconWarning,
   IconTimer,
   IconOk,
+  IconVisible,
 } from "../ui/icons";
 
 const VERDICT_STYLE: Record<RouteVerdict, string> = {
@@ -17,6 +24,12 @@ const VERDICT_STYLE: Record<RouteVerdict, string> = {
   limite: "border-amber-500/40 bg-amber-950/50 text-amber-200",
   tardi: "border-rose-500/40 bg-rose-950/50 text-rose-200",
   si_allontana: "border-rose-500/40 bg-rose-950/50 text-rose-200",
+};
+
+const VIEW_TEXT: Record<ViewQuality, string> = {
+  buona: "text-emerald-300",
+  media: "text-amber-300",
+  scarsa: "text-rose-300",
 };
 
 export function NavPanel() {
@@ -116,6 +129,8 @@ export function NavPanel() {
 
             {route.feasibility && <Feasibility data={route.feasibility} chase={chase} />}
 
+            {route.view && <ViewBox data={route.view} chase={chase} />}
+
             {route.intercept && route.note && (
               <div className="mt-1 text-xs text-slate-400">{route.note}</div>
             )}
@@ -164,6 +179,29 @@ function Feasibility({ data, chase }: { data: RouteFeasibility; chase: boolean }
       </div>
       <div className="mt-0.5 pl-5 text-[11px] tabular-nums opacity-70">
         guida {data.driveMin.toFixed(0)}′ · cella {data.cellMin.toFixed(0)}′
+      </div>
+    </div>
+  );
+}
+
+function ViewBox({ data, chase }: { data: RouteView; chase: boolean }) {
+  return (
+    <div
+      className={`mt-2 rounded-md border border-white/10 bg-slate-800/50 px-2 py-1.5 ${
+        chase ? "text-sm" : "text-xs"
+      }`}
+    >
+      <div className="flex items-center gap-1.5">
+        <IconVisible
+          className={`shrink-0 ${chase ? "h-4 w-4" : "h-3.5 w-3.5"} ${VIEW_TEXT[data.quality]}`}
+          strokeWidth={1.75}
+        />
+        <span className={`font-medium ${VIEW_TEXT[data.quality]}`}>{data.text}</span>
+      </div>
+      <div className="mt-0.5 pl-5 text-[11px] tabular-nums text-slate-500">
+        vista {data.score}/100 · sole {data.sunAzimuthDeg.toFixed(0)}° a{" "}
+        {data.sunElevationDeg.toFixed(0)}° sull'orizzonte
+        {!data.rainKnown && " · pioggia non nota"}
       </div>
     </div>
   );
