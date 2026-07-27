@@ -32,6 +32,11 @@ priorità assoluta; il co-pilota AI non li genera e non li può contraddire.
   intercetto scelto sul fianco d'inflow, agganciato alla rete stradale e accompagnato
   dal verdetto di fattibilità (se ci arrivi prima della cella), con hand-off a Google
   Maps sul telefono.
+- **Qualità della vista**: il punto di intercetto viene scelto anche in base a cosa si
+  vedrà davvero da lì. La linea di vista verso la cella viene percorsa sul grigliato SRI
+  per misurare quanta pioggia si frappone, e la posizione del sole (calcolata, nessuna
+  sorgente esterna) dice se la cella sarà controluce o illuminata. Il terreno non è
+  ancora considerato.
 - **Pianificazione**: heatmap di CAPE/shear (Open-Meteo, modello ICON-2I) e outlook
   convettivi PRETEMP + ESTOFEX; bollettini di criticità ufficiali DPC come overlay.
 - **Registrazione e replay** delle sessioni per la revisione post-caccia.
