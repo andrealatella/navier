@@ -121,6 +121,21 @@ export interface RouteFeasibility {
   text: string;
 }
 
+export type ViewLight = "controluce" | "laterale" | "illuminata" | "crepuscolo" | "notte";
+export type ViewQuality = "buona" | "media" | "scarsa";
+
+export interface RouteView {
+  rainBlockedKm: number;
+  rainMaxMmh: number;
+  rainKnown: boolean;
+  sunAzimuthDeg: number;
+  sunElevationDeg: number;
+  light: ViewLight;
+  score: number;
+  quality: ViewQuality;
+  text: string;
+}
+
 export interface RouteInfo {
   provider: string;
   distanceKm: number;
@@ -130,6 +145,7 @@ export interface RouteInfo {
   note: string | null;
   crosses: number[];
   feasibility: RouteFeasibility | null;
+  view: RouteView | null;
   dest: { lat: number; lon: number };
   mapsUrl: string;
 }
