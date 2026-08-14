@@ -34,7 +34,7 @@ sessions/
 backend/app/static_dist/
 *.tif
 *.tiff
-# …but keep the small, deliberate test fixtures (§13.2)
+
 !backend/tests/fixtures/*.tif
 *.png.cache
 
